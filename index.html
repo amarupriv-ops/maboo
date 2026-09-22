@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0b16">
+  <title>MABOO — Mabar Online</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <header class="topbar">
+    <button class="brand" id="brandHome" aria-label="Go to home">
+      <span class="brand-name">MABOO</span>
+      <span class="brand-subtitle">Mabar Online</span>
+    </button>
+    <nav class="topnav" aria-label="Main navigation">
+      <button class="nav-link active" data-screen="home">Home</button>
+      <button class="nav-link" data-screen="games">Games</button>
+    </nav>
+  </header>
+
+  <main id="app" class="app-shell">
+    <!-- HOME -->
+    <section class="screen active" id="screen-home">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="pulse-dot"></span> MINI-GAME HUB</div>
+          <h1>Play. Connect.<br><span>Have Fun.</span></h1>
+          <p>Platform mabar dengan mini-game seru bersama teman.</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-large" id="playNowBtn">PLAY NOW <span>→</span></button>
+            <button class="btn btn-ghost btn-large" id="howToPlayBtn">HOW TO PLAY</button>
+          </div>
+        </div>
+        <div class="hero-card" aria-hidden="true">
+          <div class="hero-card-top">
+            <span class="live-pill"><i></i> LOCAL PLAY</span>
+            <span class="hero-code">MABOO</span>
+          </div>
+          <div class="hero-orbit">
+            <div class="orbit-ring ring-one"></div>
+            <div class="orbit-ring ring-two"></div>
+            <div class="mascot">✦</div>
+            <span class="float-icon icon-wolf">🐺</span>
+            <span class="float-icon icon-alien">👽</span>
+            <span class="float-icon icon-music">🎵</span>
+            <span class="float-icon icon-run">🏃</span>
+          </div>
+          <div class="hero-card-bottom">
+            <div><strong>4</strong><span>GAMES</span></div>
+            <div><strong>2–12</strong><span>PLAYERS</span></div>
+            <div><strong>∞</strong><span>FUN</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">FIND YOUR GAME</span>
+          <h2>Choose Your Game</h2>
+        </div>
+        <button class="text-button" data-screen="games">View all <span>→</span></button>
+      </div>
+      <div class="game-grid" id="homeGameGrid"></div>
+    </section>
+
+    <!-- GAMES -->
+    <section class="screen" id="screen-games">
+      <div class="page-heading">
+        <button class="back-button" data-screen="home">←</button>
+        <div>
+          <span class="section-kicker">MABOO ARCADE</span>
+          <h2>Choose Your Game</h2>
+          <p>Pick a game, create a room, and start the mabar.</p>
+        </div>
+      </div>
+      <div class="game-grid game-grid-large" id="gamesGrid"></div>
+    </section>
+
+    <!-- PLAY MENU -->
+    <section class="screen" id="screen-play">
+      <div class="center-panel">
+        <button class="back-button standalone" data-screen="home">← Back</button>
+        <div class="panel-heading">
+          <span class="section-kicker">MABAR MODE</span>
+          <h2>Play With Friends</h2>
+          <p>Create a new lobby or join an existing room.</p>
+        </div>
+        <div class="play-options">
+          <button class="mode-card" id="createModeBtn">
+            <span class="mode-icon">✦</span>
+            <span class="mode-content"><strong>CREATE ROOM</strong><small>Buat room baru dan jadi host.</small></span>
+            <span class="mode-arrow">→</span>
+          </button>
+          <button class="mode-card" id="joinModeBtn">
+            <span class="mode-icon cyan">⌁</span>
+            <span class="mode-content"><strong>JOIN ROOM</strong><small>Masuk ke room teman dengan kode.</small></span>
+            <span class="mode-arrow">→</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CREATE ROOM -->
+    <section class="screen" id="screen-create">
+      <div class="form-panel">
+        <button class="back-button standalone" data-screen="play">← Back</button>
+        <div class="panel-heading">
+          <span class="section-kicker">NEW LOBBY</span>
+          <h2>Create Room</h2>
+          <p>Atur game dan identitasmu sebelum masuk lobby.</p>
+        </div>
+
+        <div class="field-group">
+          <label for="createName">Player Name</label>
+          <input id="createName" type="text" maxlength="18" placeholder="Contoh: Amar" autocomplete="off">
+        </div>
+
+        <div class="field-group">
+          <label>Choose Game</label>
+          <div class="mini-game-select" id="createGameSelect"></div>
+        </div>
+
+        <div class="field-group">
+          <label for="roomName">Room Name <span>(optional)</span></label>
+          <input id="roomName" type="text" maxlength="24" placeholder="Mabar malam ini..." autocomplete="off">
+        </div>
+
+        <button class="btn btn-primary full-width" id="createRoomBtn">CREATE ROOM <span>→</span></button>
+      </div>
+    </section>
+
+    <!-- JOIN ROOM -->
+    <section class="screen" id="screen-join">
+      <div class="form-panel narrow">
+        <button class="back-button standalone" data-screen="play">← Back</button>
+        <div class="panel-heading">
+          <span class="section-kicker">JOIN LOBBY</span>
+          <h2>Join Room</h2>
+          <p>Masukkan nama dan kode room temanmu.</p>
+        </div>
+
+        <div class="field-group">
+          <label for="joinName">Player Name</label>
+          <input id="joinName" type="text" maxlength="18" placeholder="Contoh: Player 2" autocomplete="off">
+        </div>
+        <div class="field-group">
+          <label for="roomCodeInput">Room Code</label>
+          <input id="roomCodeInput" class="code-input" type="text" maxlength="5" placeholder="A7K29" autocomplete="off" spellcheck="false">
+        </div>
+        <button class="btn btn-primary full-width" id="joinRoomBtn">JOIN ROOM <span>→</span></button>
+        <p class="form-hint">V2 Online: gunakan kode room dari temanmu.</p>
+      </div>
+    </section>
+
+    <!-- ROOM -->
+    <section class="screen" id="screen-room">
+      <div class="room-layout">
+        <div class="room-main">
+          <div class="room-header">
+            <div>
+              <button class="back-button" id="leaveRoomTop">← Leave</button>
+              <span class="section-kicker">WAITING ROOM</span>
+              <h2 id="roomTitle">ROOM A7K29</h2>
+              <p id="roomGameLabel">Werewolf · 6–12 Players</p>
+            </div>
+            <div class="room-code-box">
+              <span>ROOM CODE</span>
+              <strong id="roomCodeDisplay">A7K29</strong>
+              <button id="copyCodeBtn">COPY</button>
+            </div>
+          </div>
+
+          <div class="room-banner">
+            <div class="banner-icon" id="roomGameIcon">🐺</div>
+            <div>
+              <span class="section-kicker">CURRENT GAME</span>
+              <h3 id="roomGameName">Werewolf</h3>
+              <p id="roomGameDescription">Social deduction. Trust no one.</p>
+            </div>
+            <button class="change-game-btn" id="changeGameBtn">CHANGE GAME</button>
+          </div>
+
+          <div class="players-heading">
+            <div><span class="section-kicker">LOBBY</span><h3>Players</h3></div>
+            <span class="player-count" id="playerCount">4 / 12 Players</span>
+          </div>
+          <div class="player-grid" id="playerGrid"></div>
+        </div>
+
+        <aside class="room-side">
+          <div class="side-card">
+            <span class="section-kicker">YOUR STATUS</span>
+            <div class="your-status">
+              <div class="status-avatar" id="yourAvatar">✦</div>
+              <div><strong id="yourName">Player</strong><span id="yourStatusText">NOT READY</span></div>
+            </div>
+            <button class="btn btn-primary full-width" id="readyBtn">READY</button>
+            <button class="btn btn-secondary full-width" id="startGameBtn">START GAME</button>
+          </div>
+          <div class="side-card tips">
+            <span class="section-kicker">QUICK TIP</span>
+            <p>Share the room code with your friends. Lobby MABOO sekarang tersambung online.</p>
+          </div>
+          <button class="btn btn-danger full-width" id="leaveRoomBtn">LEAVE ROOM</button>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- HOW TO PLAY MODAL -->
+  <div class="modal-backdrop" id="howToModal" aria-hidden="true">
+    <div class="modal">
+      <button class="modal-close" id="closeHowTo" aria-label="Close">×</button>
+      <span class="section-kicker">HOW IT WORKS</span>
+      <h2>Ready to Mabar?</h2>
+      <div class="steps">
+        <div class="step"><b>01</b><div><strong>Pick a game</strong><span>Choose one of four mini-games.</span></div></div>
+        <div class="step"><b>02</b><div><strong>Create or join</strong><span>Make a room or enter your friend's code.</span></div></div>
+        <div class="step"><b>03</b><div><strong>Ready up</strong><span>Wait for the lobby, then start the game.</span></div></div>
+      </div>
+      <p class="modal-note">MABOO V2 menghubungkan lobby ke Supabase. Gameplay online hadir di tahap berikutnya.</p>
+    </div>
+  </div>
+
+  <!-- CHANGE GAME MODAL -->
+  <div class="modal-backdrop" id="gameModal" aria-hidden="true">
+    <div class="modal game-modal">
+      <button class="modal-close" id="closeGameModal" aria-label="Close">×</button>
+      <span class="section-kicker">LOBBY SETTINGS</span>
+      <h2>Select Game</h2>
+      <div class="mini-game-select" id="roomGameSelect"></div>
+      <button class="btn btn-primary full-width" id="confirmGameBtn">CONFIRM GAME</button>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
+</body>
+</html>
