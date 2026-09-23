@@ -65,6 +65,31 @@ const supabaseClient =
     ? supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
     : null;
 
+
+/* =========================================================
+   ANONYMOUS AUTH
+   ========================================================= */
+
+async function ensureAuth() {
+  if (!supabaseClient) throw new Error("Supabase is not configured.");
+
+  const {
+    data: { session }
+  } = await supabaseClient.auth.getSession();
+
+  if (session) return session.user;
+
+  const { data, error } = await supabaseClient.auth.signInAnonymously();
+
+  if (error) {
+    console.error("Anonymous auth error:", error);
+    throw error;
+  }
+
+  return data.user;
+}
+
+
 const state = {
   currentScreen: "home",
   playerName: "",
@@ -185,7 +210,7 @@ function closeModal(id) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, char => ({
+  return String(value).replace(/[&<>\"']/g, char => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
@@ -333,6 +358,8 @@ async function createRoom() {
   $("#createRoomBtn").textContent = "CREATING...";
 
   try {
+    const user = await ensureAuth();
+
     let room = null;
 
     // Retry a few times in case a generated 5-character code already exists.
@@ -364,7 +391,8 @@ async function createRoom() {
         room_id: room.id,
         player_name: name,
         is_host: true,
-        is_ready: false
+        is_ready: false,
+        user_id: user.id
       })
       .select("id, player_name, is_host, is_ready")
       .single();
@@ -428,6 +456,8 @@ async function joinRoom() {
   $("#joinRoomBtn").textContent = "JOINING...";
 
   try {
+    const user = await ensureAuth();
+
     const { data: room, error: roomError } = await supabaseClient
       .from("rooms")
       .select("id, room_code, game")
@@ -461,7 +491,8 @@ async function joinRoom() {
         room_id: room.id,
         player_name: name,
         is_host: false,
-        is_ready: false
+        is_ready: false,
+        user_id: user.id
       })
       .select("id, player_name, is_host, is_ready")
       .single();
@@ -596,7 +627,9 @@ function startGame() {
   toast("Game start system comes in the next milestone.");
 }
 
+
 /* Global navigation */
+
 $$("[data-screen]").forEach(button => {
   button.addEventListener("click", () => showScreen(button.dataset.screen));
 });
@@ -657,7 +690,9 @@ $("#roomCodeInput").addEventListener("keydown", event => {
   if (event.key === "Enter") joinRoom();
 });
 
+
 /* Initial render */
+
 renderGameCards($("#homeGameGrid"));
 renderGameCards($("#gamesGrid"));
 renderCreateGameSelect();
