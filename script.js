@@ -101,7 +101,10 @@ const state = {
   players: [],
   roomId: null,
   playerId: null,
-  roomChannel: null
+  userId: null,
+  roomChannel: null,
+  presenceChannel: null,
+  presenceReady: false
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -241,6 +244,7 @@ function renderLobby() {
   $("#startGameBtn").style.display = state.host ? "inline-flex" : "none";
 
   const grid = $("#playerGrid");
+
   grid.innerHTML = state.players.map((player, index) => `
     <div class="player-card">
       <div class="player-avatar">${avatarForPlayer(player, index)}</div>
@@ -281,6 +285,7 @@ async function fetchPlayers() {
   }));
 
   const me = state.players.find(player => player.id === state.playerId);
+
   if (me) {
     state.ready = me.ready;
     state.host = me.host;
@@ -288,6 +293,117 @@ async function fetchPlayers() {
 
   renderLobby();
 }
+
+
+/* =========================================================
+   REALTIME PRESENCE / ANTI-GHOST PLAYER
+   ========================================================= */
+
+async function subscribeToPresence() {
+  if (!supabaseClient || !state.roomId || !state.playerId) return;
+
+  if (state.presenceChannel) {
+    await supabaseClient.removeChannel(state.presenceChannel);
+    state.presenceChannel = null;
+  }
+
+  state.presenceReady = false;
+
+  const channel = supabaseClient.channel(
+    `room-presence-${state.roomId}`,
+    {
+      config: {
+        presence: {
+          key: state.playerId
+        }
+      }
+    }
+  );
+
+  state.presenceChannel = channel;
+
+  channel
+    .on("presence", { event: "sync" }, () => {
+      state.presenceReady = true;
+      console.log("MABOO presence synced.");
+    })
+
+    .on("presence", { event: "join" }, ({ key }) => {
+      console.log("Presence join:", key);
+    })
+
+    .on("presence", { event: "leave" }, async ({ key }) => {
+      console.log("Presence leave:", key);
+
+      if (!key || key === state.playerId || !state.roomId) {
+        return;
+      }
+
+      /*
+       * Player has disappeared from realtime presence.
+       * Remove only that player's row from THIS room.
+       */
+      const { error } = await supabaseClient
+        .from("players")
+        .delete()
+        .eq("id", key)
+        .eq("room_id", state.roomId);
+
+      if (error) {
+        console.error("presence cleanup:", error);
+        return;
+      }
+
+      await fetchPlayers();
+    })
+
+    .subscribe(async (status, error) => {
+      if (status === "SUBSCRIBED") {
+        try {
+          await channel.track({
+            player_id: state.playerId,
+            user_id: state.userId || null,
+            online_at: new Date().toISOString()
+          });
+
+          console.log("MABOO presence connected.");
+        } catch (trackError) {
+          console.error("Presence track:", trackError);
+          toast("Presence connection failed.");
+        }
+      }
+
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.error("Presence:", status, error);
+        state.presenceReady = false;
+        toast("Presence connection failed.");
+      }
+    });
+}
+
+async function stopPresence() {
+  if (!state.presenceChannel) return;
+
+  try {
+    await state.presenceChannel.untrack();
+  } catch (error) {
+    console.warn("Presence untrack:", error);
+  }
+
+  try {
+    await supabaseClient.removeChannel(state.presenceChannel);
+  } catch (error) {
+    console.warn("Presence remove channel:", error);
+  }
+
+  state.presenceChannel = null;
+  state.presenceReady = false;
+}
+
+
+/* =========================================================
+   ROOM REALTIME
+   ========================================================= */
 
 async function subscribeToRoom() {
   if (!supabaseClient || !state.roomId) return;
@@ -299,6 +415,7 @@ async function subscribeToRoom() {
 
   state.roomChannel = supabaseClient
     .channel(`room-db-${state.roomId}`)
+
     .on(
       "postgres_changes",
       {
@@ -309,6 +426,7 @@ async function subscribeToRoom() {
       },
       () => fetchPlayers()
     )
+
     .on(
       "postgres_changes",
       {
@@ -319,13 +437,16 @@ async function subscribeToRoom() {
       },
       async (payload) => {
         const newRoom = payload.new;
+
         if (!newRoom) return;
 
         state.selectedGame = newRoom.game || state.selectedGame;
         state.roomName = newRoom.room_name || state.roomName;
+
         renderLobby();
       }
     )
+
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
         console.log("MABOO realtime connected.");
@@ -338,6 +459,11 @@ async function subscribeToRoom() {
     });
 }
 
+
+/* =========================================================
+   CREATE ROOM
+   ========================================================= */
+
 async function createRoom() {
   if (!supabaseClient) {
     toast("Add your Supabase URL and publishable key first.");
@@ -345,6 +471,7 @@ async function createRoom() {
   }
 
   const name = $("#createName").value.trim();
+
   if (!name) {
     toast("Enter your player name first.");
     $("#createName").focus();
@@ -362,7 +489,6 @@ async function createRoom() {
 
     let room = null;
 
-    // Retry a few times in case a generated 5-character code already exists.
     for (let attempt = 0; attempt < 5; attempt++) {
       const roomCode = randomRoomCode();
 
@@ -380,10 +506,14 @@ async function createRoom() {
         break;
       }
 
-      if (error.code !== "23505") throw error;
+      if (error.code !== "23505") {
+        throw error;
+      }
     }
 
-    if (!room) throw new Error("Could not generate a unique room code.");
+    if (!room) {
+      throw new Error("Could not generate a unique room code.");
+    }
 
     const { data: player, error: playerError } = await supabaseClient
       .from("players")
@@ -398,38 +528,57 @@ async function createRoom() {
       .single();
 
     if (playerError) {
-      await supabaseClient.from("rooms").delete().eq("id", room.id);
+      await supabaseClient
+        .from("rooms")
+        .delete()
+        .eq("id", room.id);
+
       throw playerError;
     }
 
     const { error: hostError } = await supabaseClient
       .from("rooms")
-      .update({ host_id: player.id })
+      .update({
+        host_id: player.id
+      })
       .eq("id", room.id);
 
-    if (hostError) throw hostError;
+    if (hostError) {
+      throw hostError;
+    }
 
     state.playerName = name;
     state.roomName = roomName;
     state.roomCode = room.room_code;
     state.roomId = room.id;
     state.playerId = player.id;
+    state.userId = user.id;
     state.selectedGame = room.game;
     state.host = true;
     state.ready = false;
 
     await fetchPlayers();
     await subscribeToRoom();
+    await subscribeToPresence();
+
     showScreen("room");
+
     toast("Room created online!");
+
   } catch (error) {
     console.error("createRoom:", error);
     toast(error.message || "Failed to create room.");
+
   } finally {
     $("#createRoomBtn").disabled = false;
     $("#createRoomBtn").innerHTML = 'CREATE ROOM <span>→</span>';
   }
 }
+
+
+/* =========================================================
+   JOIN ROOM
+   ========================================================= */
 
 async function joinRoom() {
   if (!supabaseClient) {
@@ -464,7 +613,9 @@ async function joinRoom() {
       .eq("room_code", code)
       .maybeSingle();
 
-    if (roomError) throw roomError;
+    if (roomError) {
+      throw roomError;
+    }
 
     if (!room) {
       toast("Room not found.");
@@ -475,10 +626,15 @@ async function joinRoom() {
 
     const { count, error: countError } = await supabaseClient
       .from("players")
-      .select("*", { count: "exact", head: true })
+      .select("*", {
+        count: "exact",
+        head: true
+      })
       .eq("room_id", room.id);
 
-    if (countError) throw countError;
+    if (countError) {
+      throw countError;
+    }
 
     if (count >= game.max) {
       toast("Room is full.");
@@ -497,28 +653,41 @@ async function joinRoom() {
       .select("id, player_name, is_host, is_ready")
       .single();
 
-    if (playerError) throw playerError;
+    if (playerError) {
+      throw playerError;
+    }
 
     state.playerName = name;
     state.roomCode = room.room_code;
     state.roomId = room.id;
     state.playerId = player.id;
+    state.userId = user.id;
     state.selectedGame = room.game;
     state.host = false;
     state.ready = false;
 
     await fetchPlayers();
     await subscribeToRoom();
+    await subscribeToPresence();
+
     showScreen("room");
+
     toast("Joined room online!");
+
   } catch (error) {
     console.error("joinRoom:", error);
     toast(error.message || "Failed to join room.");
+
   } finally {
     $("#joinRoomBtn").disabled = false;
     $("#joinRoomBtn").innerHTML = 'JOIN ROOM <span>→</span>';
   }
 }
+
+
+/* =========================================================
+   COPY ROOM CODE
+   ========================================================= */
 
 async function copyRoomCode() {
   if (!state.roomCode) return;
@@ -526,16 +695,28 @@ async function copyRoomCode() {
   try {
     await navigator.clipboard.writeText(state.roomCode);
     toast("Room code copied!");
+
   } catch {
     const helper = document.createElement("textarea");
+
     helper.value = state.roomCode;
+
     document.body.appendChild(helper);
+
     helper.select();
+
     document.execCommand("copy");
+
     helper.remove();
+
     toast("Room code copied!");
   }
 }
+
+
+/* =========================================================
+   READY
+   ========================================================= */
 
 async function toggleReady() {
   if (!supabaseClient || !state.playerId) return;
@@ -544,7 +725,9 @@ async function toggleReady() {
 
   const { error } = await supabaseClient
     .from("players")
-    .update({ is_ready: nextReady })
+    .update({
+      is_ready: nextReady
+    })
     .eq("id", state.playerId);
 
   if (error) {
@@ -554,9 +737,20 @@ async function toggleReady() {
   }
 
   state.ready = nextReady;
+
   await fetchPlayers();
-  toast(state.ready ? "You're ready!" : "You're not ready.");
+
+  toast(
+    state.ready
+      ? "You're ready!"
+      : "You're not ready."
+  );
 }
+
+
+/* =========================================================
+   LEAVE ROOM
+   ========================================================= */
 
 async function leaveRoom() {
   if (supabaseClient && state.playerId) {
@@ -565,8 +759,12 @@ async function leaveRoom() {
       .delete()
       .eq("id", state.playerId);
 
-    if (error) console.error("leaveRoom:", error);
+    if (error) {
+      console.error("leaveRoom:", error);
+    }
   }
+
+  await stopPresence();
 
   if (supabaseClient && state.roomChannel) {
     await supabaseClient.removeChannel(state.roomChannel);
@@ -575,6 +773,7 @@ async function leaveRoom() {
   state.roomChannel = null;
   state.roomId = null;
   state.playerId = null;
+  state.userId = null;
   state.roomCode = "";
   state.roomName = "";
   state.host = false;
@@ -582,8 +781,14 @@ async function leaveRoom() {
   state.players = [];
 
   showScreen("home");
+
   toast("You left the room.");
 }
+
+
+/* =========================================================
+   CHANGE GAME
+   ========================================================= */
 
 function openChangeGame() {
   if (!state.host) {
@@ -591,18 +796,26 @@ function openChangeGame() {
     return;
   }
 
-  renderMiniGames($("#roomGameSelect"), state.selectedGame);
+  renderMiniGames(
+    $("#roomGameSelect"),
+    state.selectedGame
+  );
+
   openModal("gameModal");
 }
 
 async function confirmGameChange() {
-  if (!supabaseClient || !state.roomId || !state.host) return;
+  if (!supabaseClient || !state.roomId || !state.host) {
+    return;
+  }
 
   const game = getGame(state.selectedGame);
 
   const { error } = await supabaseClient
     .from("rooms")
-    .update({ game: game.id })
+    .update({
+      game: game.id
+    })
     .eq("id", state.roomId);
 
   if (error) {
@@ -612,9 +825,16 @@ async function confirmGameChange() {
   }
 
   closeModal("gameModal");
+
   await fetchPlayers();
+
   toast(`${game.name} selected!`);
 }
+
+
+/* =========================================================
+   START GAME
+   ========================================================= */
 
 function startGame() {
   if (!state.host) return;
@@ -628,15 +848,27 @@ function startGame() {
 }
 
 
-/* Global navigation */
+/* =========================================================
+   GLOBAL NAVIGATION
+   ========================================================= */
 
 $$("[data-screen]").forEach(button => {
-  button.addEventListener("click", () => showScreen(button.dataset.screen));
+  button.addEventListener("click", () => {
+    showScreen(button.dataset.screen);
+  });
 });
 
-$("#brandHome").addEventListener("click", () => showScreen("home"));
-$("#playNowBtn").addEventListener("click", () => showScreen("play"));
-$("#howToPlayBtn").addEventListener("click", () => openModal("howToModal"));
+$("#brandHome").addEventListener("click", () => {
+  showScreen("home");
+});
+
+$("#playNowBtn").addEventListener("click", () => {
+  showScreen("play");
+});
+
+$("#howToPlayBtn").addEventListener("click", () => {
+  openModal("howToModal");
+});
 
 $("#createModeBtn").addEventListener("click", () => {
   state.selectedGame = "werewolf";
@@ -644,7 +876,10 @@ $("#createModeBtn").addEventListener("click", () => {
   showScreen("create");
 });
 
-$("#joinModeBtn").addEventListener("click", () => showScreen("join"));
+$("#joinModeBtn").addEventListener("click", () => {
+  showScreen("join");
+});
+
 $("#createRoomBtn").addEventListener("click", createRoom);
 $("#joinRoomBtn").addEventListener("click", joinRoom);
 $("#copyCodeBtn").addEventListener("click", copyRoomCode);
@@ -655,12 +890,19 @@ $("#changeGameBtn").addEventListener("click", openChangeGame);
 $("#confirmGameBtn").addEventListener("click", confirmGameChange);
 $("#startGameBtn").addEventListener("click", startGame);
 
-$("#closeHowTo").addEventListener("click", () => closeModal("howToModal"));
-$("#closeGameModal").addEventListener("click", () => closeModal("gameModal"));
+$("#closeHowTo").addEventListener("click", () => {
+  closeModal("howToModal");
+});
+
+$("#closeGameModal").addEventListener("click", () => {
+  closeModal("gameModal");
+});
 
 $$(".modal-backdrop").forEach(backdrop => {
   backdrop.addEventListener("click", event => {
-    if (event.target === backdrop) closeModal(backdrop.id);
+    if (event.target === backdrop) {
+      closeModal(backdrop.id);
+    }
   });
 });
 
@@ -671,6 +913,11 @@ document.addEventListener("keydown", event => {
   }
 });
 
+
+/* =========================================================
+   ROOM CODE INPUT
+   ========================================================= */
+
 $("#roomCodeInput").addEventListener("input", event => {
   event.target.value = event.target.value
     .replace(/[^a-z0-9]/gi, "")
@@ -679,19 +926,27 @@ $("#roomCodeInput").addEventListener("input", event => {
 });
 
 $("#createName").addEventListener("keydown", event => {
-  if (event.key === "Enter") createRoom();
+  if (event.key === "Enter") {
+    createRoom();
+  }
 });
 
 $("#joinName").addEventListener("keydown", event => {
-  if (event.key === "Enter") $("#roomCodeInput").focus();
+  if (event.key === "Enter") {
+    $("#roomCodeInput").focus();
+  }
 });
 
 $("#roomCodeInput").addEventListener("keydown", event => {
-  if (event.key === "Enter") joinRoom();
+  if (event.key === "Enter") {
+    joinRoom();
+  }
 });
 
 
-/* Initial render */
+/* =========================================================
+   INITIAL RENDER
+   ========================================================= */
 
 renderGameCards($("#homeGameGrid"));
 renderGameCards($("#gamesGrid"));
