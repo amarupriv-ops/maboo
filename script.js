@@ -104,8 +104,41 @@ const state = {
   userId: null,
   roomChannel: null,
   presenceChannel: null,
-  presenceReady: false
+  presenceReady: false,
+  heartbeatTimer: null
 };
+
+function startHeartbeat() {
+  stopHeartbeat();
+
+  if (!supabaseClient || !state.playerId || !state.roomId) return;
+
+  const updateLastSeen = async () => {
+    if (!state.playerId || !state.roomId) return;
+
+    const { error } = await supabaseClient
+      .from("players")
+      .update({
+        last_seen: new Date().toISOString()
+      })
+      .eq("id", state.playerId)
+      .eq("room_id", state.roomId);
+
+    if (error) {
+      console.error("Heartbeat:", error);
+    }
+  };
+
+  updateLastSeen();
+  state.heartbeatTimer = setInterval(updateLastSeen, 30000);
+}
+
+function stopHeartbeat() {
+  if (state.heartbeatTimer) {
+    clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer = null;
+  }
+}
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -262,7 +295,7 @@ function renderLobby() {
   $("#playerCount").textContent = `${state.players.length} / ${game.max} Players`;
 }
 
-async function fetchPlayers() {
+async function fetchPlayers(skipHostTransfer = false) {
   if (!supabaseClient || !state.roomId) return;
 
   const { data, error } = await supabaseClient
@@ -281,7 +314,8 @@ async function fetchPlayers() {
     id: player.id,
     name: player.player_name,
     ready: player.is_ready,
-    host: player.is_host
+    host: player.is_host,
+    joinedAt: player.joined_at
   }));
 
   const me = state.players.find(player => player.id === state.playerId);
@@ -289,9 +323,91 @@ async function fetchPlayers() {
   if (me) {
     state.ready = me.ready;
     state.host = me.host;
+  } else {
+    state.ready = false;
+    state.host = false;
   }
 
   renderLobby();
+
+  if (!skipHostTransfer) {
+    await transferHostIfNeeded();
+  }
+}
+
+
+/* =========================================================
+   HOST TRANSFER
+   ========================================================= */
+
+let hostTransferRunning = false;
+
+async function transferHostIfNeeded() {
+  if (
+    hostTransferRunning ||
+    !supabaseClient ||
+    !state.roomId ||
+    !state.playerId ||
+    state.players.length === 0
+  ) {
+    return;
+  }
+
+  // If a host still exists, nothing needs to be transferred.
+  const currentHost = state.players.find(player => player.host);
+
+  if (currentHost) {
+    return;
+  }
+
+  // Players are ordered by joined_at ascending, so the oldest
+  // remaining player is the deterministic host candidate.
+  const newHost = state.players[0];
+
+  if (!newHost || !newHost.id) {
+    return;
+  }
+
+  hostTransferRunning = true;
+
+  try {
+    console.log("MABOO: transferring host to", newHost.name);
+
+    const { error: playerError } = await supabaseClient
+      .from("players")
+      .update({
+        is_host: true
+      })
+      .eq("id", newHost.id)
+      .eq("room_id", state.roomId)
+      .eq("is_host", false);
+
+    if (playerError) {
+      console.error("Host transfer player:", playerError);
+      return;
+    }
+
+    const { error: roomError } = await supabaseClient
+      .from("rooms")
+      .update({
+        host_id: newHost.id
+      })
+      .eq("id", state.roomId);
+
+    if (roomError) {
+      console.error("Host transfer room:", roomError);
+      return;
+    }
+
+    // Refresh without recursively attempting another transfer.
+    await fetchPlayers(true);
+
+    if (newHost.id === state.playerId) {
+      toast("👑 Kamu sekarang menjadi Host!");
+    }
+  } finally {
+    hostTransferRunning = false;
+  }
 }
 
 
@@ -560,6 +676,7 @@ async function createRoom() {
     await fetchPlayers();
     await subscribeToRoom();
     await subscribeToPresence();
+    startHeartbeat();
 
     showScreen("room");
 
@@ -669,6 +786,7 @@ async function joinRoom() {
     await fetchPlayers();
     await subscribeToRoom();
     await subscribeToPresence();
+    startHeartbeat();
 
     showScreen("room");
 
@@ -764,6 +882,7 @@ async function leaveRoom() {
     }
   }
 
+  stopHeartbeat();
   await stopPresence();
 
   if (supabaseClient && state.roomChannel) {
@@ -911,6 +1030,11 @@ document.addEventListener("keydown", event => {
     closeModal("howToModal");
     closeModal("gameModal");
   }
+});
+
+
+window.addEventListener("pagehide", () => {
+  stopHeartbeat();
 });
 
 
