@@ -929,7 +929,7 @@ async function joinRoom() {
 
     const { data: room, error: roomError } = await supabaseClient
       .from("rooms")
-      .select("id, room_code, game")
+      .select("id, room_code, game, game_status, game_phase")
       .eq("room_code", code)
       .maybeSingle();
 
