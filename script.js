@@ -105,7 +105,10 @@ const state = {
   roomChannel: null,
   presenceChannel: null,
   presenceReady: false,
-  heartbeatTimer: null
+  heartbeatTimer: null,
+  gamePhase: "lobby",
+  gameStatus: "lobby",
+  roleRevealShown: false
 };
 
 function startHeartbeat() {
@@ -261,6 +264,199 @@ function avatarForPlayer(player, index = 0) {
   return avatars[index % avatars.length];
 }
 
+/* =========================================================
+   WEREWOLF ROLE REVEAL
+   ========================================================= */
+
+const werewolfRoleInfo = {
+  werewolf: {
+    icon: "🐺",
+    name: "Werewolf",
+    faction: "Faksi Werewolf",
+    description: "Cari dan habisi Village. Kamu mengetahui sesama Werewolf, tetapi tidak mengetahui sumber serangan atau perlindungan."
+  },
+  alpha_wolf: {
+    icon: "🦊",
+    name: "Alpha Wolf",
+    faction: "Faksi Alpha",
+    description: "Faksi terpisah dari Werewolf. Kamu dapat menyerang siapa pun, termasuk Werewolf."
+  },
+  villager: {
+    icon: "👤",
+    name: "Villager",
+    faction: "Faksi Village",
+    description: "Tidak punya aksi malam khusus. Gunakan informasi, pengamatan, dan voting untuk menemukan ancaman."
+  },
+  seer: {
+    icon: "🔮",
+    name: "Seer",
+    faction: "Faksi Village",
+    description: "Setiap malam kamu dapat memeriksa satu pemain dan mengetahui role aslinya."
+  },
+  doctor: {
+    icon: "💊",
+    name: "Doctor",
+    faction: "Faksi Village",
+    description: "Memiliki 2 penggunaan heal. Setiap malam dapat menyembuhkan satu pemain lain."
+  },
+  bodyguard: {
+    icon: "🛡️",
+    name: "Bodyguard",
+    faction: "Faksi Village",
+    description: "Memiliki HP 150 dan dapat melindungi pemain dari serangan dengan aturan Guard yang berlaku."
+  },
+  hunter: {
+    icon: "🏹",
+    name: "Hunter",
+    faction: "Faksi Village",
+    description: "Jika mati karena voting atau serangan malam, kamu mendapat Final Shot sebelum kematian diumumkan."
+  },
+  witch: {
+    icon: "🧙",
+    name: "Witch",
+    faction: "Faksi Village",
+    description: "Memiliki satu heal dan satu poison yang dapat digunakan masing-masing sekali dalam satu game."
+  },
+  jester: {
+    icon: "🎭",
+    name: "Jester",
+    faction: "Faksi Jester",
+    description: "Kamu menang sendiri jika berhasil dieliminasi melalui voting."
+  }
+};
+
+function ensureRoleRevealUI() {
+  if (document.getElementById("mabooRoleReveal")) return;
+
+  const style = document.createElement("style");
+  style.id = "mabooRoleRevealStyle";
+  style.textContent = `
+    #mabooRoleReveal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(5, 7, 12, .88);
+      backdrop-filter: blur(12px);
+    }
+    #mabooRoleReveal.open { display: flex; }
+    #mabooRoleReveal .role-card {
+      width: min(430px, 100%);
+      padding: 30px 24px 24px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(28,31,43,.98), rgba(13,15,22,.98));
+      box-shadow: 0 24px 80px rgba(0,0,0,.5);
+      text-align: center;
+      color: #fff;
+    }
+    #mabooRoleReveal .role-kicker {
+      font-size: 12px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      opacity: .62;
+      margin-bottom: 18px;
+    }
+    #mabooRoleReveal .role-icon { font-size: 64px; line-height: 1; margin-bottom: 14px; }
+    #mabooRoleReveal .role-name { margin: 0; font-size: 30px; }
+    #mabooRoleReveal .role-faction { margin: 8px 0 18px; opacity: .7; }
+    #mabooRoleReveal .role-description {
+      margin: 0 auto 22px;
+      max-width: 360px;
+      line-height: 1.6;
+      opacity: .86;
+    }
+    #mabooRoleReveal .role-continue {
+      width: 100%;
+      min-height: 46px;
+      border: 0;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+      color: #fff;
+      background: #7c5cff;
+    }
+  `;
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("div");
+  overlay.id = "mabooRoleReveal";
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.innerHTML = `
+    <div class="role-card" role="dialog" aria-modal="true" aria-labelledby="mabooRoleName">
+      <div class="role-kicker">YOUR ROLE</div>
+      <div class="role-icon" id="mabooRoleIcon">?</div>
+      <h2 class="role-name" id="mabooRoleName">Role</h2>
+      <div class="role-faction" id="mabooRoleFaction">Faction</div>
+      <p class="role-description" id="mabooRoleDescription"></p>
+      <button type="button" class="role-continue" id="mabooRoleContinue">CONTINUE</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("mabooRoleContinue").addEventListener("click", () => {
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    state.roleRevealShown = true;
+  });
+}
+
+async function fetchOwnRole(showReveal = true) {
+  if (!supabaseClient || !state.playerId || !state.roomId) return null;
+
+  const { data, error } = await supabaseClient
+    .from("players")
+    .select("role, hp, max_hp, is_alive")
+    .eq("id", state.playerId)
+    .eq("room_id", state.roomId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("fetchOwnRole:", error);
+    toast("Couldn't load your role.");
+    return null;
+  }
+
+  if (!data || !data.role) return null;
+
+  if (showReveal) {
+    ensureRoleRevealUI();
+
+    const info = werewolfRoleInfo[data.role] || {
+      icon: "❔",
+      name: data.role,
+      faction: "Unknown",
+      description: "Role berhasil dibagikan."
+    };
+
+    $("#mabooRoleIcon").textContent = info.icon;
+    $("#mabooRoleName").textContent = info.name;
+    $("#mabooRoleFaction").textContent = info.faction;
+    $("#mabooRoleDescription").textContent = info.description;
+
+    const overlay = $("#mabooRoleReveal");
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
+    state.roleRevealShown = true;
+  }
+
+  return data;
+}
+
+async function handleGamePhase(gamePhase) {
+  state.gamePhase = gamePhase || "lobby";
+
+  if (state.gamePhase === "role_distribution") {
+    await fetchOwnRole(true);
+  }
+
+  renderLobby();
+}
+
+
 function renderLobby() {
   const game = getGame();
 
@@ -274,7 +470,9 @@ function renderLobby() {
   $("#yourAvatar").textContent = "✦";
   $("#yourStatusText").textContent = state.ready ? "READY" : "NOT READY";
   $("#readyBtn").textContent = state.ready ? "UNREADY" : "READY";
-  $("#startGameBtn").style.display = state.host ? "inline-flex" : "none";
+  const canStart = state.host && state.gamePhase === "lobby";
+  $("#startGameBtn").style.display = canStart ? "inline-flex" : "none";
+  $("#readyBtn").disabled = state.gamePhase !== "lobby";
 
   const grid = $("#playerGrid");
 
@@ -558,8 +756,10 @@ async function subscribeToRoom() {
 
         state.selectedGame = newRoom.game || state.selectedGame;
         state.roomName = newRoom.room_name || state.roomName;
+        state.gamePhase = newRoom.game_phase || "lobby";
+        state.gameStatus = newRoom.game_status || "lobby";
 
-        renderLobby();
+        await handleGamePhase(state.gamePhase);
       }
     )
 
@@ -614,7 +814,7 @@ async function createRoom() {
           room_code: roomCode,
           game: game.id
         })
-        .select("id, room_code, game")
+        .select("id, room_code, game, game_status, game_phase")
         .single();
 
       if (!error) {
@@ -672,6 +872,9 @@ async function createRoom() {
     state.selectedGame = room.game;
     state.host = true;
     state.ready = false;
+    state.gamePhase = "lobby";
+    state.gameStatus = "lobby";
+    state.roleRevealShown = false;
 
     await fetchPlayers();
     await subscribeToRoom();
@@ -739,6 +942,11 @@ async function joinRoom() {
       return;
     }
 
+    if (room.game_status !== "lobby" || room.game_phase !== "lobby") {
+      toast("Game sudah dimulai.");
+      return;
+    }
+
     const game = getGame(room.game);
 
     const { count, error: countError } = await supabaseClient
@@ -782,6 +990,9 @@ async function joinRoom() {
     state.selectedGame = room.game;
     state.host = false;
     state.ready = false;
+    state.gamePhase = room.game_phase || "lobby";
+    state.gameStatus = room.game_status || "lobby";
+    state.roleRevealShown = false;
 
     await fetchPlayers();
     await subscribeToRoom();
@@ -897,6 +1108,9 @@ async function leaveRoom() {
   state.roomName = "";
   state.host = false;
   state.ready = false;
+  state.gamePhase = "lobby";
+  state.gameStatus = "lobby";
+  state.roleRevealShown = false;
   state.players = [];
 
   showScreen("home");
@@ -955,15 +1169,85 @@ async function confirmGameChange() {
    START GAME
    ========================================================= */
 
-function startGame() {
+async function startGame() {
   if (!state.host) return;
+
+  if (!supabaseClient || !state.roomId) {
+    toast("Room belum siap.");
+    return;
+  }
+
+  if (state.selectedGame !== "werewolf") {
+    toast("Werewolf engine belum dipakai untuk game ini.");
+    return;
+  }
+
+  if (state.gamePhase !== "lobby") {
+    toast("Game sudah dimulai.");
+    return;
+  }
 
   if (!state.ready) {
     toast("Ready up before starting.");
     return;
   }
 
-  toast("Game start system comes in the next milestone.");
+  const game = getGame();
+  const playerCount = state.players.length;
+
+  if (playerCount < game.min || playerCount > game.max) {
+    toast(`Werewolf membutuhkan ${game.min}–${game.max} pemain.`);
+    return;
+  }
+
+  const allReady = state.players.length > 0 && state.players.every(player => player.ready);
+  if (!allReady) {
+    toast("Semua pemain harus READY.");
+    return;
+  }
+
+  const button = $("#startGameBtn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "STARTING...";
+  }
+
+  try {
+    const { data, error } = await supabaseClient.rpc("start_werewolf_game", {
+      p_room_id: state.roomId
+    });
+
+    if (error) throw error;
+
+    console.log("MABOO Werewolf started:", data);
+
+    state.gameStatus = "playing";
+    state.gamePhase = "role_distribution";
+
+    await fetchOwnRole(true);
+    renderLobby();
+  } catch (error) {
+    console.error("startGame:", error);
+
+    const message = String(error?.message || "");
+
+    if (message.includes("NOT_ALL_PLAYERS_READY")) {
+      toast("Semua pemain harus READY.");
+    } else if (message.includes("INVALID_PLAYER_COUNT")) {
+      toast("Jumlah pemain Werewolf harus 6–12.");
+    } else if (message.includes("ONLY_HOST_CAN_START")) {
+      toast("Hanya Host yang bisa memulai game.");
+    } else if (message.includes("GAME_ALREADY_STARTED")) {
+      toast("Game sudah dimulai.");
+    } else {
+      toast(error?.message || "Gagal memulai Werewolf.");
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "START GAME";
+    }
+  }
 }
 
 
@@ -1072,6 +1356,7 @@ $("#roomCodeInput").addEventListener("keydown", event => {
    INITIAL RENDER
    ========================================================= */
 
+ensureRoleRevealUI();
 renderGameCards($("#homeGameGrid"));
 renderGameCards($("#gamesGrid"));
 renderCreateGameSelect();
