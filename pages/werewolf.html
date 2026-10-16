@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080a13">
+  <title>MABOO — Werewolf</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="../css/werewolf.css">
+</head>
+<body class="werewolf-page">
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="topbar game-topbar">
+    <a class="brand game-brand" href="../index.html" aria-label="MABOO home"><span class="brand-name">MABOO</span><span class="brand-subtitle">WEREWOLF MODE</span></a>
+    <div class="game-room-pill"><span class="pulse-dot"></span><span id="roomCode">ROOM -----</span></div>
+  </header>
+  <main class="ww-shell">
+    <section class="ww-heading">
+      <div class="section-kicker">MABOO ORIGINAL · SOCIAL DEDUCTION</div>
+      <h1>🐺 Werewolf</h1>
+      <p>Amati pemain lain. Simpan rahasiamu. Pilih langkah dengan cermat.</p>
+    </section>
+    <section id="loadingPanel" class="ww-panel ww-loading"><div class="ww-spinner"></div><h2>Menghubungkan ke room...</h2><p>Memeriksa identitas pemain dan status game.</p></section>
+    <section id="errorPanel" class="ww-panel" hidden><div class="ww-big-icon">⚠️</div><h2>Room tidak bisa dibuka</h2><p id="errorText">Sesi room tidak ditemukan.</p><a class="btn btn-primary" href="../index.html">Kembali ke MABOO</a></section>
+    <section id="rolePanel" class="ww-panel role-panel" hidden>
+      <div class="ww-panel-kicker">ROLE DISTRIBUTION · PRIVATE</div>
+      <div class="role-seal" id="roleIcon">?</div>
+      <h2 id="roleName">Role</h2>
+      <div class="role-faction" id="roleFaction">Faksi</div>
+      <p class="role-description" id="roleDescription"></p>
+      <div class="ww-stats"><div><span>HP</span><strong id="playerHp">—</strong></div><div><span>STATUS</span><strong id="playerAlive">—</strong></div><div><span>ROUND</span><strong id="roundNumber">0</strong></div></div>
+      <button id="revealContinue" class="btn btn-primary full-width">SIMPAN ROLE & LANJUT <span>→</span></button>
+      <p class="ww-private-note">Role ini hanya ditampilkan dari data pemain yang sedang login.</p>
+    </section>
+    <section id="phasePanel" class="ww-panel phase-panel" hidden>
+      <div class="phase-icon" id="phaseIcon">🌙</div>
+      <div class="ww-panel-kicker" id="phaseKicker">GAME IN PROGRESS</div>
+      <h2 id="phaseTitle">Fase malam</h2>
+      <p id="phaseDescription">Menyiapkan aksi malam.</p>
+      <div class="ww-status-line"><span class="pulse-dot"></span><span id="phaseStatus">Menunggu pembaruan server...</span></div>
+      <div class="ww-divider"></div>
+      <h3>Pemain di room</h3>
+      <div id="playersList" class="ww-player-list"></div>
+      <p class="ww-private-note">Role pemain lain tidak ditampilkan. Aksi malam akan aktif setelah validasi server untuk setiap role selesai dipasang.</p>
+      <button id="refreshGame" class="btn btn-secondary full-width">PERBARUI STATUS</button>
+    </section>
+    <p class="ww-footer">MABOO · Mabar Online <span>•</span> Werewolf</p>
+  </main>
+  <div class="toast-container" id="toastContainer"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../js/games/werewolf.js"></script>
+</body>
+</html>

@@ -446,11 +446,28 @@ async function fetchOwnRole(showReveal = true) {
   return data;
 }
 
+function saveGameSession() {
+  if (!state.roomId || !state.playerId) return;
+  sessionStorage.setItem("mabooGameSession", JSON.stringify({
+    roomId: state.roomId,
+    playerId: state.playerId,
+    roomCode: state.roomCode,
+    playerName: state.playerName,
+    selectedGame: state.selectedGame
+  }));
+}
+
+function openGamePage() {
+  saveGameSession();
+  window.location.href = "pages/werewolf.html";
+}
+
 async function handleGamePhase(gamePhase) {
   state.gamePhase = gamePhase || "lobby";
 
-  if (state.gamePhase === "role_distribution") {
-    await fetchOwnRole(true);
+  if (state.gamePhase === "role_distribution" && state.selectedGame === "werewolf") {
+    openGamePage();
+    return;
   }
 
   renderLobby();
@@ -1224,8 +1241,7 @@ async function startGame() {
     state.gameStatus = "playing";
     state.gamePhase = "role_distribution";
 
-    await fetchOwnRole(true);
-    renderLobby();
+    openGamePage();
   } catch (error) {
     console.error("startGame:", error);
 
