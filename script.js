@@ -510,14 +510,16 @@ function renderLobby() {
   $("#playerCount").textContent = `${state.players.length} / ${game.max} Players`;
 }
 
+
 async function fetchPlayers(skipHostTransfer = false) {
   if (!supabaseClient || !state.roomId) return;
 
-  const { data, error } = await supabaseClient
-    .from("players")
-    .select("id, player_name, is_host, is_ready, joined_at")
-    .eq("room_id", state.roomId)
-    .order("joined_at", { ascending: true });
+  const { data, error } = await supabaseClient.rpc(
+    "get_maboo_room_players",
+    {
+      p_room_id: state.roomId
+    }
+  );
 
   if (error) {
     console.error("fetchPlayers:", error);
@@ -525,7 +527,11 @@ async function fetchPlayers(skipHostTransfer = false) {
     return;
   }
 
-  state.players = (data || []).map(player => ({
+  const players = typeof data === "string"
+    ? JSON.parse(data)
+    : data;
+
+  state.players = (players || []).map(player => ({
     id: player.id,
     name: player.player_name,
     ready: player.is_ready,
@@ -533,7 +539,9 @@ async function fetchPlayers(skipHostTransfer = false) {
     joinedAt: player.joined_at
   }));
 
-  const me = state.players.find(player => player.id === state.playerId);
+  const me = state.players.find(
+    player => player.id === state.playerId
+  );
 
   if (me) {
     state.ready = me.ready;
