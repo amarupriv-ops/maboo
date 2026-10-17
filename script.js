@@ -568,15 +568,12 @@ async function transferHostIfNeeded() {
     return;
   }
 
-  // If a host still exists, nothing needs to be transferred.
   const currentHost = state.players.find(player => player.host);
 
   if (currentHost) {
     return;
   }
 
-  // Players are ordered by joined_at ascending, so the oldest
-  // remaining player is the deterministic host candidate.
   const newHost = state.players[0];
 
   if (!newHost || !newHost.id) {
@@ -588,38 +585,26 @@ async function transferHostIfNeeded() {
   try {
     console.log("MABOO: transferring host to", newHost.name);
 
-    const { error: playerError } = await supabaseClient
-      .from("players")
-      .update({
-        is_host: true
-      })
-      .eq("id", newHost.id)
-      .eq("room_id", state.roomId)
-      .eq("is_host", false);
+    const { error } = await supabaseClient.rpc(
+      "transfer_maboo_host",
+      {
+        p_room_id: state.roomId,
+        p_new_host_player_id: newHost.id
+      }
+    );
 
-    if (playerError) {
-      console.error("Host transfer player:", playerError);
+    if (error) {
+      console.error("Host transfer:", error);
       return;
     }
 
-    const { error: roomError } = await supabaseClient
-      .from("rooms")
-      .update({
-        host_id: newHost.id
-      })
-      .eq("id", state.roomId);
-
-    if (roomError) {
-      console.error("Host transfer room:", roomError);
-      return;
-    }
-
-    // Refresh without recursively attempting another transfer.
     await fetchPlayers(true);
 
     if (newHost.id === state.playerId) {
       toast("👑 Kamu sekarang menjadi Host!");
     }
+  } catch (error) {
+    console.error("Host transfer failed:", error);
   } finally {
     hostTransferRunning = false;
   }
