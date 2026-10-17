@@ -111,6 +111,7 @@ const state = {
   roleRevealShown: false
 };
 
+
 function startHeartbeat() {
   stopHeartbeat();
 
@@ -119,13 +120,12 @@ function startHeartbeat() {
   const updateLastSeen = async () => {
     if (!state.playerId || !state.roomId) return;
 
-    const { error } = await supabaseClient
-      .from("players")
-      .update({
-        last_seen: new Date().toISOString()
-      })
-      .eq("id", state.playerId)
-      .eq("room_id", state.roomId);
+    const { error } = await supabaseClient.rpc(
+      "update_maboo_heartbeat",
+      {
+        p_player_id: state.playerId
+      }
+    );
 
     if (error) {
       console.error("Heartbeat:", error);
