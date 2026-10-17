@@ -1102,15 +1102,20 @@ async function toggleReady() {
    LEAVE ROOM
    ========================================================= */
 
+
 async function leaveRoom() {
   if (supabaseClient && state.playerId) {
-    const { error } = await supabaseClient
-      .from("players")
-      .delete()
-      .eq("id", state.playerId);
+    const { error } = await supabaseClient.rpc(
+      "leave_maboo_room",
+      {
+        p_player_id: state.playerId
+      }
+    );
 
     if (error) {
       console.error("leaveRoom:", error);
+      toast("Couldn't leave the room. Please try again.");
+      return;
     }
   }
 
@@ -1120,6 +1125,22 @@ async function leaveRoom() {
   if (supabaseClient && state.roomChannel) {
     await supabaseClient.removeChannel(state.roomChannel);
   }
+
+  state.roomChannel = null;
+  state.roomId = null;
+  state.playerId = null;
+  state.userId = null;
+  state.roomCode = "";
+  state.roomName = "";
+  state.host = false;
+  state.ready = false;
+  state.players = [];
+
+  showScreen("home");
+
+  toast("You left the room.");
+}
+
 
   state.roomChannel = null;
   state.roomId = null;
