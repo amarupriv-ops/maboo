@@ -778,6 +778,7 @@ async function subscribeToRoom() {
 }
 
 
+
 /* =========================================================
    CREATE ROOM
    ========================================================= */
@@ -805,77 +806,53 @@ async function createRoom() {
   try {
     const user = await ensureAuth();
 
-    let room = null;
+    let result = null;
+    let lastError = null;
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const roomCode = randomRoomCode();
 
-      const { data, error } = await supabaseClient
-        .from("rooms")
-        .insert({
-          room_code: roomCode,
-          game: game.id
-        })
-        .select("id, room_code, game, game_status, game_phase")
-        .single();
+      const { data, error } = await supabaseClient.rpc(
+        "create_maboo_room",
+        {
+          p_room_code: roomCode,
+          p_game: game.id,
+          p_player_name: name
+        }
+      );
 
       if (!error) {
-        room = data;
+        result = typeof data === "string"
+          ? JSON.parse(data)
+          : data;
         break;
       }
 
+      lastError = error;
+
+      // Coba kode baru hanya jika kode room bentrok.
       if (error.code !== "23505") {
         throw error;
       }
     }
 
-    if (!room) {
-      throw new Error("Could not generate a unique room code.");
+    if (!result) {
+      throw lastError || new Error(
+        "Could not generate a unique room code."
+      );
     }
 
-    const { data: player, error: playerError } = await supabaseClient
-      .from("players")
-      .insert({
-        room_id: room.id,
-        player_name: name,
-        is_host: true,
-        is_ready: false,
-        user_id: user.id
-      })
-      .select("id, player_name, is_host, is_ready")
-      .single();
-
-    if (playerError) {
-      await supabaseClient
-        .from("rooms")
-        .delete()
-        .eq("id", room.id);
-
-      throw playerError;
-    }
-
-    const { error: hostError } = await supabaseClient
-      .from("rooms")
-      .update({
-        host_id: player.id
-      })
-      .eq("id", room.id);
-
-    if (hostError) {
-      throw hostError;
-    }
-
-    state.playerName = name;
+    state.playerName = result.player_name;
     state.roomName = roomName;
-    state.roomCode = room.room_code;
-    state.roomId = room.id;
-    state.playerId = player.id;
+    state.roomCode = result.room_code;
+    state.roomId = result.room_id;
+    state.playerId = result.player_id;
     state.userId = user.id;
-    state.selectedGame = room.game;
-    state.host = true;
-    state.ready = false;
-    state.gamePhase = "lobby";
-    state.gameStatus = "lobby";
+    state.selectedGame = result.game;
+    state.host = result.is_host;
+    state.ready = result.is_ready;
+    state.gamePhase = result.game_phase || "lobby";
+    state.gameStatus = result.game_status || "lobby";
     state.roleRevealShown = false;
 
     await fetchPlayers();
@@ -884,16 +861,27 @@ async function createRoom() {
     startHeartbeat();
 
     showScreen("room");
-
     toast("Room created online!");
 
   } catch (error) {
     console.error("createRoom:", error);
-    toast(error.message || "Failed to create room.");
+
+    const message = error.message || "";
+
+    if (message.includes("INVALID_GAME")) {
+      toast("Game yang dipilih tidak valid.");
+    } else if (message.includes("INVALID_PLAYER_NAME")) {
+      toast("Nama pemain tidak valid (maksimal 24 karakter).");
+    } else if (message.includes("INVALID_ROOM_CODE")) {
+      toast("Kode room tidak valid.");
+    } else {
+      toast(message || "Failed to create room.");
+    }
 
   } finally {
     $("#createRoomBtn").disabled = false;
-    $("#createRoomBtn").innerHTML = 'CREATE ROOM <span>→</span>';
+    $("#createRoomBtn").innerHTML =
+      'CREATE ROOM <span>→</span>';
   }
 }
 
@@ -929,71 +917,32 @@ async function joinRoom() {
   try {
     const user = await ensureAuth();
 
-    const { data: room, error: roomError } = await supabaseClient
-      .from("rooms")
-      .select("id, room_code, game, game_status, game_phase")
-      .eq("room_code", code)
-      .maybeSingle();
+    const { data, error } = await supabaseClient.rpc(
+      "join_maboo_room",
+      {
+        p_room_code: code,
+        p_player_name: name
+      }
+    );
 
-    if (roomError) {
-      throw roomError;
+    if (error) {
+      throw error;
     }
 
-    if (!room) {
-      toast("Room not found.");
-      return;
-    }
+    const result = typeof data === "string"
+      ? JSON.parse(data)
+      : data;
 
-    if (room.game_status !== "lobby" || room.game_phase !== "lobby") {
-      toast("Game sudah dimulai.");
-      return;
-    }
-
-    const game = getGame(room.game);
-
-    const { count, error: countError } = await supabaseClient
-      .from("players")
-      .select("*", {
-        count: "exact",
-        head: true
-      })
-      .eq("room_id", room.id);
-
-    if (countError) {
-      throw countError;
-    }
-
-    if (count >= game.max) {
-      toast("Room is full.");
-      return;
-    }
-
-    const { data: player, error: playerError } = await supabaseClient
-      .from("players")
-      .insert({
-        room_id: room.id,
-        player_name: name,
-        is_host: false,
-        is_ready: false,
-        user_id: user.id
-      })
-      .select("id, player_name, is_host, is_ready")
-      .single();
-
-    if (playerError) {
-      throw playerError;
-    }
-
-    state.playerName = name;
-    state.roomCode = room.room_code;
-    state.roomId = room.id;
-    state.playerId = player.id;
+    state.playerName = result.player_name;
+    state.roomCode = result.room_code;
+    state.roomId = result.room_id;
+    state.playerId = result.player_id;
     state.userId = user.id;
-    state.selectedGame = room.game;
-    state.host = false;
-    state.ready = false;
-    state.gamePhase = room.game_phase || "lobby";
-    state.gameStatus = room.game_status || "lobby";
+    state.selectedGame = result.game;
+    state.host = result.is_host;
+    state.ready = result.is_ready;
+    state.gamePhase = result.game_phase || "lobby";
+    state.gameStatus = result.game_status || "lobby";
     state.roleRevealShown = false;
 
     await fetchPlayers();
@@ -1002,18 +951,41 @@ async function joinRoom() {
     startHeartbeat();
 
     showScreen("room");
-
     toast("Joined room online!");
 
   } catch (error) {
     console.error("joinRoom:", error);
-    toast(error.message || "Failed to join room.");
+
+    const message = error.message || "";
+
+    if (message.includes("ROOM_NOT_FOUND")) {
+      toast("Room not found.");
+    } else if (message.includes("ROOM_FULL")) {
+      toast("Room is full.");
+    } else if (
+      message.includes("GAME_ALREADY_STARTED")
+    ) {
+      toast("Game sudah dimulai.");
+    } else if (
+      message.includes("INVALID_ROOM_CODE")
+    ) {
+      toast("Room code is invalid.");
+    } else if (
+      message.includes("INVALID_PLAYER_NAME")
+    ) {
+      toast("Nama pemain tidak valid (maksimal 24 karakter).");
+    } else if (message.includes("ALREADY_IN_ROOM")) {
+      toast("Kamu sudah berada di room ini.");
+    } else {
+      toast(message || "Failed to join room.");
+    }
 
   } finally {
     $("#joinRoomBtn").disabled = false;
     $("#joinRoomBtn").innerHTML = 'JOIN ROOM <span>→</span>';
   }
 }
+
 
 
 /* =========================================================
