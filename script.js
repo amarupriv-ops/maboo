@@ -1069,18 +1069,22 @@ async function toggleReady() {
 
   const nextReady = !state.ready;
 
-  const { error } = await supabaseClient
-    .from("players")
-    .update({
-      is_ready: nextReady
-    })
-    .eq("id", state.playerId);
+  const { error } = await supabaseClient.rpc("set_player_ready", {
+    p_player_id: state.playerId,
+    p_is_ready: nextReady
+  });
 
   if (error) {
     console.error("toggleReady:", error);
     toast("Couldn't update ready status.");
     return;
   }
+
+  state.ready = nextReady;
+  await fetchPlayers();
+
+  toast(state.ready ? "You're ready!" : "You're not ready.");
+}
 
   state.ready = nextReady;
 
