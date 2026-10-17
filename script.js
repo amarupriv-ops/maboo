@@ -623,6 +623,7 @@ async function transferHostIfNeeded() {
    REALTIME PRESENCE / ANTI-GHOST PLAYER
    ========================================================= */
 
+
 async function subscribeToPresence() {
   if (!supabaseClient || !state.roomId || !state.playerId) return;
 
@@ -663,22 +664,22 @@ async function subscribeToPresence() {
         return;
       }
 
-      /*
-       * Player has disappeared from realtime presence.
-       * Remove only that player's row from THIS room.
-       */
-      const { error } = await supabaseClient
-        .from("players")
-        .delete()
-        .eq("id", key)
-        .eq("room_id", state.roomId);
+      const { data: removed, error } = await supabaseClient.rpc(
+        "cleanup_offline_maboo_player",
+        {
+          p_room_id: state.roomId,
+          p_player_id: key
+        }
+      );
 
       if (error) {
-        console.error("presence cleanup:", error);
+        console.error("Presence cleanup:", error);
         return;
       }
 
-      await fetchPlayers();
+      if (removed) {
+        await fetchPlayers();
+      }
     })
 
     .subscribe(async (status, error) => {
