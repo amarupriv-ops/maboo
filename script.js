@@ -1071,18 +1071,6 @@ async function toggleReady() {
   toast(state.ready ? "You're ready!" : "You're not ready.");
 }
 
-  state.ready = nextReady;
-
-  await fetchPlayers();
-
-  toast(
-    state.ready
-      ? "You're ready!"
-      : "You're not ready."
-  );
-}
-
-
 /* =========================================================
    LEAVE ROOM
    ========================================================= */
@@ -1110,22 +1098,6 @@ async function leaveRoom() {
   if (supabaseClient && state.roomChannel) {
     await supabaseClient.removeChannel(state.roomChannel);
   }
-
-  state.roomChannel = null;
-  state.roomId = null;
-  state.playerId = null;
-  state.userId = null;
-  state.roomCode = "";
-  state.roomName = "";
-  state.host = false;
-  state.ready = false;
-  state.players = [];
-
-  showScreen("home");
-
-  toast("You left the room.");
-}
-
 
   state.roomChannel = null;
   state.roomId = null;
