@@ -1186,12 +1186,13 @@ async function confirmGameChange() {
 
   const game = getGame(state.selectedGame);
 
-  const { error } = await supabaseClient
-    .from("rooms")
-    .update({
-      game: game.id
-    })
-    .eq("id", state.roomId);
+  const { error } = await supabaseClient.rpc(
+    "change_maboo_game",
+    {
+      p_room_id: state.roomId,
+      p_game: game.id
+    }
+  );
 
   if (error) {
     console.error("confirmGameChange:", error);
@@ -1205,7 +1206,6 @@ async function confirmGameChange() {
 
   toast(`${game.name} selected!`);
 }
-
 
 /* =========================================================
    START GAME
