@@ -20,7 +20,10 @@
   let currentUser = null;
   let roomChannel = null;
   let ownPlayer = null;
+  let latestRoom = null;
   let revealed = false;
+  let phaseTimer = null;
+  let advancingPhase = false;
 
   function toast(message) {
     const container = $("toastContainer");
@@ -37,7 +40,7 @@
   function showPhase(room) {
     $("loadingPanel").hidden=true; $("errorPanel").hidden=true; $("rolePanel").hidden=true; $("phasePanel").hidden=false;
     const phase=room.game_phase || "role_distribution";
-    const labels={role_distribution:["🎭","PEMBAGIAN ROLE","Role sudah dibagikan","Role pemain lain tetap rahasia."],night:["🌙","FASE MALAM","Malam telah tiba","Aksi malam belum aktif sampai endpoint server divalidasi."],morning:["☀️","PAGI","Malam berakhir","Menunggu hasil resolusi malam dari server."],voting:["🗳️","VOTING","Waktu berdiskusi","Voting akan aktif setelah fungsi voting server dipasang."],vote_result:["⚖️","HASIL VOTING","Hasil pemungutan suara","Menunggu hasil final dari server."],game_over:["🏆","GAME SELESAI","Permainan berakhir","Hasil kemenangan menunggu status resmi server."]};
+    const labels={role_distribution:["🎭","PEMBAGIAN ROLE","Role sudah dibagikan","Role pemain lain tetap rahasia."],night:["🌙","FASE MALAM","Malam telah tiba","Antarmuka untuk mengirim aksi malam belum tersedia."],morning:["☀️","PAGI","Malam berakhir","Menunggu hasil resolusi malam dari server."],voting:["🗳️","VOTING","Waktu berdiskusi","Antarmuka voting belum tersedia."],vote_result:["⚖️","HASIL VOTING","Hasil pemungutan suara","Menunggu hasil final dari server."],game_over:["🏆","GAME SELESAI","Permainan berakhir","Hasil kemenangan menunggu status resmi server."]};
     const label=labels[phase] || ["🎮","GAME IN PROGRESS","Game sedang berjalan","Status game diperbarui dari server."];
     $("phaseIcon").textContent=label[0]; $("phaseKicker").textContent=label[1]; $("phaseTitle").textContent=label[2]; $("phaseDescription").textContent=label[3];
     $("phaseStatus").textContent=`Status: ${room.game_status || "playing"} · Fase: ${phase}`;
@@ -45,10 +48,11 @@
   }
   async function loadState() {
     if (!client || !session || !currentUser) throw new Error("Supabase atau sesi login tidak tersedia. Buka room dari halaman utama MABOO.");
-    const {data:room,error:roomError}=await client.from("rooms").select("id,room_code,game,game_status,game_phase,game_round").eq("id",session.roomId).maybeSingle();
+    const {data:room,error:roomError}=await client.from("rooms").select("id,room_code,game,game_status,game_phase,game_round,phase_deadline").eq("id",session.roomId).maybeSingle();
     if (roomError) throw roomError; if (!room) throw new Error("Room tidak ditemukan atau tidak dapat diakses.");
     if (room.game !== "werewolf") throw new Error("Room ini bukan room Werewolf.");
-    const {data:player,error:playerError}=await client.from("players").select("id,user_id,player_name,role,hp,max_hp,is_alive,room_id").eq("id",session.playerId).eq("room_id",room.id).eq("user_id",currentUser.id).maybeSingle();
+    latestRoom = room;
+    const {data:player,error:playerError}=await client.from("players").select("id,user_id,player_name,role,hp,max_hp,is_alive,is_host,room_id").eq("id",session.playerId).eq("room_id",room.id).eq("user_id",currentUser.id).maybeSingle();
     if (playerError) throw playerError; if (!player) throw new Error("Identitas pemain tidak cocok dengan akun login ini. Kembali ke lobby dan masuk ulang.");
     ownPlayer={...player,round:room.game_round || 0};
     $("roomCode").textContent=`ROOM ${room.room_code}`;
@@ -59,6 +63,29 @@
     return room;
   }
   function escapeHtml(value) { return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c])); }
+  async function advancePhaseIfNeeded() {
+    if (advancingPhase || !client || !session || !ownPlayer?.is_host || latestRoom?.game_status !== "playing") {
+      return;
+    }
+
+    advancingPhase = true;
+    try {
+      const { data, error } = await client.rpc("advance_werewolf_phase", {
+        p_room_id: session.roomId
+      });
+      if (error) throw error;
+
+      if (data && data !== "PHASE_NOT_EXPIRED" && data !== "GAME_NOT_PLAYING") {
+        console.log("MABOO Werewolf phase advanced:", data);
+        await loadState();
+      }
+    } catch (error) {
+      console.error("Advance Werewolf phase:", error);
+    } finally {
+      advancingPhase = false;
+    }
+  }
+
   async function init() {
     try {
       const raw=sessionStorage.getItem("mabooGameSession");
@@ -70,10 +97,13 @@
       currentUser=authSession.user;
       await loadState();
       roomChannel=client.channel(`werewolf-room-${session.roomId}`).on("postgres_changes",{event:"UPDATE",schema:"public",table:"rooms",filter:`id=eq.${session.roomId}`},()=>loadState().catch(e=>console.error(e))).on("postgres_changes",{event:"UPDATE",schema:"public",table:"players",filter:`room_id=eq.${session.roomId}`},()=>loadState().catch(e=>console.error(e))).subscribe();
+      if (phaseTimer) clearInterval(phaseTimer);
+      phaseTimer = window.setInterval(advancePhaseIfNeeded, 2000);
     } catch (error) { console.error("Werewolf init:",error); showError(error.message || "Gagal membuka game."); }
   }
   $("revealContinue").addEventListener("click",async()=>{revealed=true;$("rolePanel").hidden=true;try{const room=await loadState();showPhase(room);}catch(e){toast(e.message||"Gagal memperbarui status.");}});
   $("refreshGame").addEventListener("click",async()=>{const button=$("refreshGame");button.disabled=true;try{await loadState();toast("Status diperbarui.");}catch(e){toast(e.message||"Gagal memperbarui status.");}finally{button.disabled=false;}});
-  window.addEventListener("pagehide",()=>{if(roomChannel&&client)client.removeChannel(roomChannel);});
+  window.addEventListener("pagehide",()=>{if(phaseTimer)clearInterval(phaseTimer);if(roomChannel&&client)client.removeChannel(roomChannel);});
   init();
 })();
+
