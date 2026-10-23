@@ -85,14 +85,14 @@
 
   function getNightActionOptions(role) {
     const options = {
-      werewolf: [{ value: "werewolf_attack", label: "🐺 Serang target" }],
-      alpha_wolf: [{ value: "alpha_attack", label: "🦊 Serang target" }],
-      seer: [{ value: "seer_check", label: "🔮 Periksa role target" }],
-      doctor: [{ value: "doctor_heal", label: "💊 Sembuhkan target" }],
-      bodyguard: [{ value: "bodyguard_guard", label: "🛡️ Lindungi target" }],
+      werewolf: [{ value: "attack", label: "🐺 Serang target" }],
+      alpha_wolf: [{ value: "attack", label: "🦊 Serang target" }],
+      seer: [{ value: "inspect", label: "🔮 Periksa role target" }],
+      doctor: [{ value: "heal", label: "💊 Sembuhkan target" }],
+      bodyguard: [{ value: "protect", label: "🛡️ Lindungi target" }],
       witch: [
-        { value: "witch_heal", label: "🧪 Gunakan heal" },
-        { value: "witch_poison", label: "☠️ Gunakan poison" }
+        { value: "heal", label: "🧪 Gunakan heal" },
+        { value: "poison", label: "☠️ Gunakan poison" }
       ]
     };
     return options[role] || [];
@@ -163,7 +163,7 @@
   function showPhase(room) {
     $("loadingPanel").hidden=true; $("errorPanel").hidden=true; $("rolePanel").hidden=true; $("phasePanel").hidden=false;
     const phase=room.game_phase || "role_distribution";
-    const labels={role_distribution:["🎭","PEMBAGIAN ROLE","Role sudah dibagikan","Role pemain lain tetap rahasia."],night:["🌙","FASE MALAM","Malam telah tiba","Antarmuka untuk mengirim aksi malam belum tersedia."],morning:["☀️","PAGI","Malam berakhir","Menunggu hasil resolusi malam dari server."],voting:["🗳️","VOTING","Waktu berdiskusi","Antarmuka voting belum tersedia."],vote_result:["⚖️","HASIL VOTING","Hasil pemungutan suara","Menunggu hasil final dari server."],game_over:["🏆","GAME SELESAI","Permainan berakhir","Hasil kemenangan menunggu status resmi server."]};
+    const labels={role_distribution:["🎭","PEMBAGIAN ROLE","Role sudah dibagikan","Role pemain lain tetap rahasia."],night:["🌙","FASE MALAM","Malam telah tiba","Pilih aksi sesuai role dan tentukan target sebelum waktu malam habis."],morning:["☀️","PAGI","Malam berakhir","Menunggu hasil resolusi malam dari server."],voting:["🗳️","VOTING","Waktu berdiskusi","Antarmuka voting belum tersedia."],vote_result:["⚖️","HASIL VOTING","Hasil pemungutan suara","Menunggu hasil final dari server."],game_over:["🏆","GAME SELESAI","Permainan berakhir","Hasil kemenangan menunggu status resmi server."]};
     const label=labels[phase] || ["🎮","GAME IN PROGRESS","Game sedang berjalan","Status game diperbarui dari server."];
     $("phaseIcon").textContent=label[0]; $("phaseKicker").textContent=label[1]; $("phaseTitle").textContent=label[2]; $("phaseDescription").textContent=label[3];
     $("phaseStatus").textContent=`Status: ${room.game_status || "playing"} · Fase: ${phase}`;
