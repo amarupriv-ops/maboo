@@ -23,6 +23,7 @@
   let latestRoom = null;
   let revealed = false;
   let phaseTimer = null;
+  let countdownTimer = null;
   let advancingPhase = false;
 
   function toast(message) {
@@ -37,6 +38,38 @@
     $("playerHp").textContent=`${ownPlayer.hp} / ${ownPlayer.max_hp}`; $("playerAlive").textContent=ownPlayer.is_alive?"HIDUP":"GUGUR"; $("roundNumber").textContent=String(ownPlayer.round || 0);
     $("loadingPanel").hidden=true; $("errorPanel").hidden=true; $("phasePanel").hidden=true; $("rolePanel").hidden=false;
   }
+  function ensureCountdownElement() {
+    let element = $("phaseCountdown");
+    if (element) return element;
+    element = document.createElement("div");
+    element.id = "phaseCountdown";
+    element.setAttribute("role", "timer");
+    element.style.cssText = "margin:18px auto 0;padding:12px 18px;max-width:260px;border:1px solid rgba(167,139,250,.35);border-radius:14px;background:rgba(124,58,237,.12);color:#c4b5fd;text-align:center;font-size:16px;font-weight:700;letter-spacing:.3px;";
+    const status = $("phaseStatus");
+    if (status?.parentNode) status.parentNode.insertBefore(element, status.nextSibling);
+    return element;
+  }
+
+  function updateCountdown(room = latestRoom) {
+    const element = ensureCountdownElement();
+    const timedPhases = ["role_distribution", "night", "discussion", "voting", "hunter_shot", "morning", "vote_result"];
+    if (!room || !timedPhases.includes(room.game_phase) || !room.phase_deadline) {
+      element.textContent = "⏱ Waktu: —";
+      element.hidden = room?.game_phase === "game_over" || room?.game_status !== "playing";
+      return;
+    }
+    element.hidden = false;
+    const deadline = new Date(room.phase_deadline).getTime();
+    if (!Number.isFinite(deadline)) {
+      element.textContent = "⏱ Waktu: menunggu server";
+      return;
+    }
+    const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    const minutesText = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const secondsText = String(seconds % 60).padStart(2, "0");
+    element.textContent = `⏱ Sisa waktu: ${minutesText}:${secondsText}`;
+  }
+
   function showPhase(room) {
     $("loadingPanel").hidden=true; $("errorPanel").hidden=true; $("rolePanel").hidden=true; $("phasePanel").hidden=false;
     const phase=room.game_phase || "role_distribution";
@@ -44,6 +77,7 @@
     const label=labels[phase] || ["🎮","GAME IN PROGRESS","Game sedang berjalan","Status game diperbarui dari server."];
     $("phaseIcon").textContent=label[0]; $("phaseKicker").textContent=label[1]; $("phaseTitle").textContent=label[2]; $("phaseDescription").textContent=label[3];
     $("phaseStatus").textContent=`Status: ${room.game_status || "playing"} · Fase: ${phase}`;
+    updateCountdown(room);
     if (phase === "role_distribution" && ownPlayer?.role && !revealed) { showRole(); return; }
   }
   async function loadState() {
@@ -99,11 +133,13 @@
       roomChannel=client.channel(`werewolf-room-${session.roomId}`).on("postgres_changes",{event:"UPDATE",schema:"public",table:"rooms",filter:`id=eq.${session.roomId}`},()=>loadState().catch(e=>console.error(e))).on("postgres_changes",{event:"UPDATE",schema:"public",table:"players",filter:`room_id=eq.${session.roomId}`},()=>loadState().catch(e=>console.error(e))).subscribe();
       if (phaseTimer) clearInterval(phaseTimer);
       phaseTimer = window.setInterval(advancePhaseIfNeeded, 2000);
+      if (countdownTimer) clearInterval(countdownTimer);
+      countdownTimer = window.setInterval(() => updateCountdown(), 1000);
     } catch (error) { console.error("Werewolf init:",error); showError(error.message || "Gagal membuka game."); }
   }
   $("revealContinue").addEventListener("click",async()=>{revealed=true;$("rolePanel").hidden=true;try{const room=await loadState();showPhase(room);}catch(e){toast(e.message||"Gagal memperbarui status.");}});
   $("refreshGame").addEventListener("click",async()=>{const button=$("refreshGame");button.disabled=true;try{await loadState();toast("Status diperbarui.");}catch(e){toast(e.message||"Gagal memperbarui status.");}finally{button.disabled=false;}});
-  window.addEventListener("pagehide",()=>{if(phaseTimer)clearInterval(phaseTimer);if(roomChannel&&client)client.removeChannel(roomChannel);});
+  window.addEventListener("pagehide",()=>{if(phaseTimer)clearInterval(phaseTimer);if(countdownTimer)clearInterval(countdownTimer);if(roomChannel&&client)client.removeChannel(roomChannel);});
   init();
 })();
 
